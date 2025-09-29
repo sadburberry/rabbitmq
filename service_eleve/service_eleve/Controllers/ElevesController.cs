@@ -1,107 +1,69 @@
 ﻿using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
-using service_eleve.Data;
-using service_eleve.Models;
+using RabbitMQ.Client;
+using System.Text;
 
-namespace service_eleve.Controllers;
-
-[ApiController]
-[Route("api/[controller]")]
-public class ElevesController : ControllerBase
+namespace service_eleve.Controllers
 {
-    private readonly EleveContext _context;
-
-    public ElevesController(EleveContext context)
+    [ApiController]
+    [Route("[controller]")]
+    public class EleveController : ControllerBase
     {
-        _context = context;
-    }
+        private readonly IConnectionFactory _connectionFactory;
 
-    [HttpGet]
-    public async Task<ActionResult<IEnumerable<Eleve>>> GetEleves()
-    {
-        return await _context.Eleves.ToListAsync();
-    }
-
-    [HttpGet("{id}")]
-    public async Task<ActionResult<Eleve>> GetEleve(int id)
-    {
-        var eleve = await _context.Eleves.FindAsync(id);
-        if (eleve == null)
+        public EleveController(IConnectionFactory connectionFactory)
         {
-            return NotFound();
-        }
-        return eleve;
-    }
-
-    [HttpGet("classe/{classeId}")]
-    public async Task<ActionResult<IEnumerable<Eleve>>> GetElevesByClasse(int classeId)
-    {
-        return await _context.Eleves.Where(e => e.ClasseId == classeId).ToListAsync();
-    }
-
-    [HttpPost]
-    public async Task<ActionResult<Eleve>> CreateEleve(Eleve eleve)
-    {
-        _context.Eleves.Add(eleve);
-        await _context.SaveChangesAsync();
-
-        Console.WriteLine($"✅ Élève créé: {eleve.Prenom} {eleve.Nom} (Classe: {eleve.ClasseId})");
-
-        return CreatedAtAction(nameof(GetEleves), new { id = eleve.Id }, eleve);
-    }
-
-    [HttpPut("{id}")]
-    public async Task<IActionResult> UpdateEleve(int id, Eleve eleve)
-    {
-        if (id != eleve.Id)
-        {
-            return BadRequest();
+            _connectionFactory = connectionFactory;
         }
 
-        _context.Entry(eleve).State = EntityState.Modified;
-
-        try
+        [HttpGet]
+        public IActionResult Get()
         {
-            await _context.SaveChangesAsync();
+            return Ok(new { message = "Service Eleve is working!" });
         }
-        catch (DbUpdateConcurrencyException)
+
+        [HttpPost]
+        public IActionResult CreateEleve([FromBody] string eleveName)
         {
-            if (!EleveExists(id))
+            // Publier un message RabbitMQ
+            try
             {
-                return NotFound();
+                using var connection = _connectionFactory.CreateConnection();
+                using var channel = connection.CreateModel();
+
+                channel.QueueDeclare(queue: "eleve.created",
+                                    durable: false,
+                                    exclusive: false,
+                                    autoDelete: false,
+                                    arguments: null);
+
+                var body = Encoding.UTF8.GetBytes($"Eleve created: {eleveName}");
+
+                channel.BasicPublish(exchange: "",
+                                    routingKey: "eleve.created",
+                                    basicProperties: null,
+                                    body: body);
+
+                return Ok(new { message = $"Eleve {eleveName} created and message sent to RabbitMQ" });
             }
-            else
+            catch (Exception ex)
             {
-                throw;
+                return StatusCode(500, new { error = ex.Message });
             }
         }
 
-        return NoContent();
-    }
-
-    [HttpDelete("{id}")]
-    public async Task<IActionResult> DeleteEleve(int id)
-    {
-        var eleve = await _context.Eleves.FindAsync(id);
-        if (eleve == null)
+        [HttpGet("test-rabbitmq")]
+        public IActionResult TestRabbitMQ()
         {
-            return NotFound();
+            try
+            {
+                using var connection = _connectionFactory.CreateConnection();
+                using var channel = connection.CreateModel();
+                return Ok(new { message = "✅ RabbitMQ connection successful!" });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { error = $"❌ RabbitMQ connection failed: {ex.Message}" });
+            }
         }
-
-        _context.Eleves.Remove(eleve);
-        await _context.SaveChangesAsync();
-
-        return NoContent();
-    }
-
-    [HttpGet("test")]
-    public ActionResult<string> Test()
-    {
-        return "✅ Service Élève avec RabbitMQ fonctionne !";
-    }
-
-    private bool EleveExists(int id)
-    {
-        return _context.Eleves.Any(e => e.Id == id);
     }
 }

@@ -1,7 +1,6 @@
-using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.EntityFrameworkCore;
 using RabbitMQ.Client;
 using service_eleve.Data;
-using service_eleve.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.WebHost.UseUrls("http://*:80");
@@ -11,26 +10,22 @@ builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
-// Database
-builder.Services.AddDbContext<EleveContext>(options =>
-    options.UseInMemoryDatabase("EleveDB"));
+// Configuration RabbitMQ
+var rabbitMQConfig = builder.Configuration.GetSection("RabbitMQ");
+var factory = new ConnectionFactory()
+{
+    HostName = rabbitMQConfig["HostName"],
+    Port = int.Parse(rabbitMQConfig["Port"] ?? "5672"),
+    UserName = rabbitMQConfig["UserName"],
+    Password = rabbitMQConfig["Password"],
+    VirtualHost = rabbitMQConfig["VirtualHost"] ?? "/"
+};
 
-// RabbitMQ - Connection Factory
-builder.Services.AddSingleton<IConnectionFactory>(sp =>
-    new ConnectionFactory
-    {
-        HostName = "rabbitmq",
-        UserName = "guest",
-        Password = "guest",
-        Port = 5672
-    });
+builder.Services.AddSingleton<IConnectionFactory>(factory);
 
-// RabbitMQ - Connection
-builder.Services.AddSingleton<IConnection>(sp =>
-    sp.GetRequiredService<IConnectionFactory>().CreateConnection());
-
-// RabbitMQ Consumer Service
-builder.Services.AddHostedService<RabbitMQConsumerService>();
+// Add DbContext (ajustez selon votre configuration)
+// builder.Services.AddDbContext<EleveContext>(options =>
+//     options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
 
 var app = builder.Build();
 
@@ -41,14 +36,20 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI();
 }
 
+app.UseHttpsRedirection();
 app.UseAuthorization();
 app.MapControllers();
 
-// Initialize database
-using (var scope = app.Services.CreateScope())
+// Test RabbitMQ Connection
+try
 {
-    var context = scope.ServiceProvider.GetRequiredService<EleveContext>();
-    context.Database.EnsureCreated();
+    using var connection = factory.CreateConnection();
+    using var channel = connection.CreateModel();
+    Console.WriteLine("✅ Connected to RabbitMQ successfully!");
+}
+catch (Exception ex)
+{
+    Console.WriteLine($"❌ Failed to connect to RabbitMQ: {ex.Message}");
 }
 
 app.Run();

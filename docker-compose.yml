@@ -1,24 +1,24 @@
 services:
   rabbitmq:
-    image: rabbitmq:3.13-management  # Version avec interface web de gestion
+    image: rabbitmq:3.13-management
+    container_name: rabbitmq
     ports:
-      - "5672:5672"   # Port AMQP pour les connexions des applications
-      - "15672:15672" # Port de l'interface web de gestion
+      - "5672:5672"
+      - "15672:15672"
     environment:
       RABBITMQ_DEFAULT_USER: guest
       RABBITMQ_DEFAULT_PASS: guest
-      RABBITMQ_DEFAULT_VHOST: /
     healthcheck:
       test: ["CMD", "rabbitmq-diagnostics", "check_port_connectivity"]
       interval: 10s
       timeout: 5s
       retries: 10
-    mem_limit: 500m
 
   api-gateway:
     build:
       context: ./api_gateway/api_gateway
       dockerfile: Dockerfile
+    container_name: api-gateway
     ports:
       - "5000:80"
     depends_on:
@@ -29,24 +29,32 @@ services:
     build:
       context: ./service_classe/service_classe
       dockerfile: Dockerfile
+    container_name: service-classe
     ports:
       - "5001:80"
     depends_on:
       rabbitmq:
         condition: service_healthy
     environment:
-      RABBITMQ_HOST: rabbitmq
-      RABBITMQ_PORT: 5672
+      - ASPNETCORE_ENVIRONMENT=Development
+      - RabbitMQ__HostName=rabbitmq
+      - RabbitMQ__Port=5672
+      - RabbitMQ__UserName=guest
+      - RabbitMQ__Password=guest
 
   service-eleve:
     build:
       context: ./service_eleve/service_eleve
       dockerfile: Dockerfile
+    container_name: service-eleve
     ports:
       - "5002:80"
     depends_on:
       rabbitmq:
         condition: service_healthy
     environment:
-      RABBITMQ_HOST: rabbitmq
-      RABBITMQ_PORT: 5672
+      - ASPNETCORE_ENVIRONMENT=Development
+      - RabbitMQ__HostName=rabbitmq
+      - RabbitMQ__Port=5672
+      - RabbitMQ__UserName=guest
+      - RabbitMQ__Password=guest
