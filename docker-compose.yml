@@ -1,0 +1,52 @@
+services:
+  rabbitmq:
+    image: rabbitmq:3.13-management  # Version avec interface web de gestion
+    ports:
+      - "5672:5672"   # Port AMQP pour les connexions des applications
+      - "15672:15672" # Port de l'interface web de gestion
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+      RABBITMQ_DEFAULT_VHOST: /
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "check_port_connectivity"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    mem_limit: 500m
+
+  api-gateway:
+    build:
+      context: ./api_gateway/api_gateway
+      dockerfile: Dockerfile
+    ports:
+      - "5000:80"
+    depends_on:
+      - service-classe
+      - service-eleve
+
+  service-classe:
+    build:
+      context: ./service_classe/service_classe
+      dockerfile: Dockerfile
+    ports:
+      - "5001:80"
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    environment:
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: 5672
+
+  service-eleve:
+    build:
+      context: ./service_eleve/service_eleve
+      dockerfile: Dockerfile
+    ports:
+      - "5002:80"
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    environment:
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: 5672
