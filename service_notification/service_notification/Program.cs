@@ -3,7 +3,6 @@ using Microsoft.IdentityModel.Tokens;
 using RabbitMQ.Client;
 
 var builder = WebApplication.CreateBuilder(args);
-builder.WebHost.UseUrls("http://*:80");
 
 // Add services to the container.
 builder.Services.AddControllers();
@@ -31,25 +30,24 @@ builder.Services.AddAuthorization(options =>
 {
     options.AddPolicy("AdminOnly", policy => policy.RequireRole("admin"));
     options.AddPolicy("TeacherOnly", policy => policy.RequireRole("teacher"));
-    options.AddPolicy("StudentOnly", policy => policy.RequireRole("student"));
     options.AddPolicy("AdminOrTeacher", policy => policy.RequireRole("admin", "teacher"));
-    options.AddPolicy("AllUsers", policy => policy.RequireRole("admin", "teacher", "student"));
 });
 
 // RabbitMQ Configuration
 var rabbitMQConfig = builder.Configuration.GetSection("RabbitMQ");
 var factory = new ConnectionFactory()
 {
-    HostName = rabbitMQConfig["HostName"],
+    HostName = rabbitMQConfig["HostName"] ?? "rabbitmq",
     Port = int.Parse(rabbitMQConfig["Port"] ?? "5672"),
-    UserName = rabbitMQConfig["UserName"],
-    Password = rabbitMQConfig["Password"],
+    UserName = rabbitMQConfig["UserName"] ?? "guest",
+    Password = rabbitMQConfig["Password"] ?? "guest",
     VirtualHost = rabbitMQConfig["VirtualHost"] ?? "/"
 };
 
-builder.Services.AddSingleton<IConnectionFactory>(factory);
+builder.Services.AddSingleton<RabbitMQ.Client.IConnectionFactory>(factory);
 
 var app = builder.Build();
+builder.WebHost.UseUrls("http://*:80");
 
 // Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
@@ -68,7 +66,7 @@ try
 {
     using var connection = factory.CreateConnection();
     using var channel = connection.CreateModel();
-    Console.WriteLine("✅ Connected to RabbitMQ successfully!");
+    Console.WriteLine("✅ Notification Service connected to RabbitMQ successfully!");
 }
 catch (Exception ex)
 {

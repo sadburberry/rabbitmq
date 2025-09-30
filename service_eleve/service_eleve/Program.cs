@@ -1,6 +1,6 @@
-﻿using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.IdentityModel.Tokens;
 using RabbitMQ.Client;
-using service_eleve.Data;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.WebHost.UseUrls("http://*:80");
@@ -10,7 +10,33 @@ builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
-// Configuration RabbitMQ
+// 🔐 Keycloak Authentication
+builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+    .AddJwtBearer(options =>
+    {
+        options.Authority = builder.Configuration["Keycloak:Authority"];
+        options.Audience = "account";
+        options.RequireHttpsMetadata = false;
+        options.TokenValidationParameters = new TokenValidationParameters
+        {
+            ValidateAudience = true,
+            ValidateIssuer = true,
+            ValidIssuer = builder.Configuration["Keycloak:Authority"],
+            ValidateLifetime = true
+        };
+    });
+
+// 🔐 RBAC Policies
+builder.Services.AddAuthorization(options =>
+{
+    options.AddPolicy("AdminOnly", policy => policy.RequireRole("admin"));
+    options.AddPolicy("TeacherOnly", policy => policy.RequireRole("teacher"));
+    options.AddPolicy("StudentOnly", policy => policy.RequireRole("student"));
+    options.AddPolicy("AdminOrTeacher", policy => policy.RequireRole("admin", "teacher"));
+    options.AddPolicy("AllUsers", policy => policy.RequireRole("admin", "teacher", "student"));
+});
+
+// RabbitMQ Configuration
 var rabbitMQConfig = builder.Configuration.GetSection("RabbitMQ");
 var factory = new ConnectionFactory()
 {
@@ -22,10 +48,7 @@ var factory = new ConnectionFactory()
 };
 
 builder.Services.AddSingleton<IConnectionFactory>(factory);
-
-// Add DbContext (ajustez selon votre configuration)
-// builder.Services.AddDbContext<EleveContext>(options =>
-//     options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
+builder.Services.AddHttpClient();
 
 var app = builder.Build();
 
@@ -36,8 +59,9 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI();
 }
 
-app.UseHttpsRedirection();
+app.UseAuthentication(); // 🔐 ADD THIS
 app.UseAuthorization();
+
 app.MapControllers();
 
 // Test RabbitMQ Connection

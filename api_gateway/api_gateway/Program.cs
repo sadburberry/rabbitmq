@@ -1,33 +1,44 @@
-using Ocelot.DependencyInjection;
-using Ocelot.Middleware;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 
 var builder = WebApplication.CreateBuilder(args);
-
-//  IMPORTANT: Forcer le port 80 pour Docker
-builder.WebHost.UseUrls("http://*:80");
-
-// Ocelot
-builder.Services.AddOcelot();
 
 // Add services
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
-// Configuration
-builder.Configuration.AddJsonFile("ocelot.json", optional: false, reloadOnChange: true);
+// Keycloak Authentication
+builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+    .AddJwtBearer(options =>
+    {
+        options.Authority = builder.Configuration["Keycloak:Authority"];
+        options.Audience = builder.Configuration["Keycloak:Audience"];
+        options.RequireHttpsMetadata = false; // Only for development
+    });
+
+// Authorization with RBAC
+builder.Services.AddAuthorization(options =>
+{
+    options.AddPolicy("AdminOnly", policy =>
+        policy.RequireRole("admin"));
+    options.AddPolicy("TeacherOnly", policy =>
+        policy.RequireRole("teacher"));
+    options.AddPolicy("StudentOnly", policy =>
+        policy.RequireRole("student"));
+});
 
 var app = builder.Build();
 
-// Configure the HTTP request pipeline.
+// Configure pipeline
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
     app.UseSwaggerUI();
 }
 
-await app.UseOcelot();
+app.UseAuthentication();
 app.UseAuthorization();
-app.MapControllers();
+
+app.MapControllers().RequireAuthorization();
 
 app.Run();

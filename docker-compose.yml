@@ -1,4 +1,18 @@
 services:
+  keycloak:
+    image: quay.io/keycloak/keycloak:24.0
+    container_name: keycloak
+    ports:
+      - "8080:8080"
+    environment:
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: admin
+      KC_FEATURES: scripts
+      KC_HTTP_ENABLED: true
+    command: start-dev
+    depends_on:
+      - rabbitmq
+
   rabbitmq:
     image: rabbitmq:3.13-management
     container_name: rabbitmq
@@ -8,11 +22,6 @@ services:
     environment:
       RABBITMQ_DEFAULT_USER: guest
       RABBITMQ_DEFAULT_PASS: guest
-    healthcheck:
-      test: ["CMD", "rabbitmq-diagnostics", "check_port_connectivity"]
-      interval: 10s
-      timeout: 5s
-      retries: 10
 
   api-gateway:
     build:
@@ -24,6 +33,12 @@ services:
     depends_on:
       - service-classe
       - service-eleve
+      - service-notification
+      - keycloak
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+      - Keycloak__Authority=http://keycloak:8080/realms/ecole-realm
+      - Keycloak__Audience=account
 
   service-classe:
     build:
@@ -33,14 +48,11 @@ services:
     ports:
       - "5001:80"
     depends_on:
-      rabbitmq:
-        condition: service_healthy
+      - rabbitmq
+      - keycloak
     environment:
       - ASPNETCORE_ENVIRONMENT=Development
-      - RabbitMQ__HostName=rabbitmq
-      - RabbitMQ__Port=5672
-      - RabbitMQ__UserName=guest
-      - RabbitMQ__Password=guest
+      - Keycloak__Authority=http://keycloak:8080/realms/ecole-realm
 
   service-eleve:
     build:
@@ -50,11 +62,22 @@ services:
     ports:
       - "5002:80"
     depends_on:
-      rabbitmq:
-        condition: service_healthy
+      - rabbitmq
+      - keycloak
     environment:
       - ASPNETCORE_ENVIRONMENT=Development
-      - RabbitMQ__HostName=rabbitmq
-      - RabbitMQ__Port=5672
-      - RabbitMQ__UserName=guest
-      - RabbitMQ__Password=guest
+      - Keycloak__Authority=http://keycloak:8080/realms/ecole-realm
+
+  service-notification:
+    build:
+      context: ./service_notification/service_notification
+      dockerfile: Dockerfile
+    container_name: service-notification
+    ports:
+      - "5003:80"
+    depends_on:
+      - rabbitmq
+      - keycloak
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+      - Keycloak__Authority=http://keycloak:8080/realms/ecole-realm
